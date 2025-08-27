@@ -1,31 +1,61 @@
-name: Apply Patch from Issue
+name: Apply Patch from Issue (PR-based)
 on:
   issues:
     types: [opened]
 permissions:
   contents: write
+  pull-requests: write
+
 jobs:
   apply:
     if: contains(github.event.issue.title, 'PATCH:')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Apply patch from issue body
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Parse and apply patch blocks
+        id: patch
         run: |
           python - << 'PY'
-          import os, re, subprocess, sys
+          import os, re, sys, json, textwrap, subprocess
           body = """${{ github.event.issue.body }}"""
-          blocks = re.findall(r"```file:(.*?)\\n(.*?)```", body, flags=re.S)
+          # Match ```file:path\n...content...\n```
+          blocks = re.findall(r"```file:(.+?)\\r?\\n(.*?)```", body, flags=re.S)
+          print(f"Found {len(blocks)} patch block(s).")
           if not blocks:
-              print("No patch blocks found")
+              print("ERROR: No patch blocks found. Ensure the code fences start with ```file:relative/path")
               sys.exit(1)
+          changed = []
           for path, content in blocks:
+              path = path.strip()
               d = os.path.dirname(path)
               if d and not os.path.exists(d): os.makedirs(d)
-              with open(path, "w", encoding="utf-8") as f: f.write(content.strip()+"\\n")
-          subprocess.check_call(["git","config","user.name","github-actions[bot]"])
-          subprocess.check_call(["git","config","user.email","41898282+github-actions[bot]@users.noreply.github.com"])
-          subprocess.check_call(["git","add","-A"])
-          subprocess.check_call(["git","commit","-m","chore: apply patch from issue"])
-          subprocess.check_call(["git","push"])
+              with open(path, "w", encoding="utf-8") as f:
+                  f.write(content.rstrip() + "\n")
+              changed.append(path)
+          with open("._changed_files.txt","w") as f: f.write("\n".join(changed))
           PY
+
+      - name: Create patch branch
+        run: |
+          BRANCH="patch/issue-${{ github.event.issue.number }}"
+          git checkout -b "$BRANCH"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 1
+          fi
+          git commit -m "chore: apply patch from issue #${{ github.event.issue.number }}"
+          git push --set-upstream origin "$BRANCH"
+
+      - name: Open Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ github.token }}
+          branch: patch/issue-${{ github.event.issue.number }}
+          title: "PATCH: Apply changes from issue #${{ github.event.issue.number }}"
+          body: "This PR was created automatically from issue #${{ github.event.issue.number }}."
+          base: ${{ github.event.repository.default_branch }}
