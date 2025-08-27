@@ -1,0 +1,20 @@
+name: Deploy to Vercel
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy with Vercel
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.FOABnkuxikeXtr2EjzBxGDdM }}
+          vercel-org-id: ${{ secrets.lumoras-projects-9c8c9126 }}
+          vercel-project-id: ${{ secrets.prj_ithxRbj6YitL6dZ4LhxgZEI0aHys }}
+          working-directory: .
+          prod: true
