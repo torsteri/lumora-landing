@@ -1,0 +1,31 @@
+name: Apply Patch from Issue
+on:
+  issues:
+    types: [opened]
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: contains(github.event.issue.title, 'PATCH:')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply patch from issue body
+        run: |
+          python - << 'PY'
+          import os, re, subprocess, sys
+          body = """${{ github.event.issue.body }}"""
+          blocks = re.findall(r"```file:(.*?)\\n(.*?)```", body, flags=re.S)
+          if not blocks:
+              print("No patch blocks found")
+              sys.exit(1)
+          for path, content in blocks:
+              d = os.path.dirname(path)
+              if d and not os.path.exists(d): os.makedirs(d)
+              with open(path, "w", encoding="utf-8") as f: f.write(content.strip()+"\\n")
+          subprocess.check_call(["git","config","user.name","github-actions[bot]"])
+          subprocess.check_call(["git","config","user.email","41898282+github-actions[bot]@users.noreply.github.com"])
+          subprocess.check_call(["git","add","-A"])
+          subprocess.check_call(["git","commit","-m","chore: apply patch from issue"])
+          subprocess.check_call(["git","push"])
+          PY
